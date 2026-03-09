@@ -24,6 +24,7 @@ from zerver.models import (
     UserProfile,
 )
 from zerver.models.presence import UserPresence
+from zerver.models.recipients import get_direct_message_group_user_ids
 from zerver.models.user_activity import UserActivityInterval
 from zerver.models.user_topics import UserTopic
 
@@ -112,6 +113,8 @@ class CatchUpTopic:
     sample_messages: list[dict[str, object]] = field(default_factory=list)
     key_messages: list[dict[str, object]] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
+    is_dm: bool = False
+    dm_user_ids: list[int] = field(default_factory=list)
 
     @property
     def sender_count(self) -> int:
@@ -172,6 +175,9 @@ class CatchUpTopic:
             result["key_messages"] = self.key_messages
         if self.keywords:
             result["keywords"] = self.keywords
+        if self.is_dm:
+            result["is_dm"] = True
+            result["dm_user_ids"] = self.dm_user_ids
         return result
 
 
@@ -459,3 +465,91 @@ def rank_topics(
     now = timezone_now()
     sorted_topics = sorted(topics.values(), key=lambda t: t.score(now), reverse=True)
     return sorted_topics[:max_topics]
+
+
+def get_catch_up_dm_messages(
+    user_profile: UserProfile,
+    since: datetime,
+) -> dict[TopicKey, CatchUpTopic]:
+    """Aggregate DM messages sent to the user since ``since``,
+    grouped by conversation.
+
+    For 1:1 DMs the conversation key is the sender; for group DMs it
+    is the group recipient.  Returns a dict compatible with the stream
+    topic dict so both can be merged before ranking.
+    """
+    dm_messages = (
+        Message.objects.filter(
+            usermessage__user_profile=user_profile,
+            date_sent__gt=since,
+            recipient__type__in=[Recipient.PERSONAL, Recipient.DIRECT_MESSAGE_GROUP],
+        )
+        .exclude(sender=user_profile)
+        .select_related("sender", "recipient")
+        .order_by("id")[:MAX_CATCH_UP_MESSAGES]
+    )
+
+    topics: dict[TopicKey, CatchUpTopic] = {}
+
+    for message in dm_messages:
+        recipient = message.recipient
+
+        if recipient.type == Recipient.PERSONAL:
+            topic_key: TopicKey = (0, f"dm:{message.sender_id}")
+            display_name = message.sender.full_name
+            dm_user_ids = [message.sender_id]
+        else:
+            topic_key = (0, f"group-dm:{recipient.id}")
+            display_name = ""
+            dm_user_ids: list[int] = []
+
+        if topic_key not in topics:
+            topics[topic_key] = CatchUpTopic(
+                stream_id=0,
+                stream_name="Direct messages",
+                topic_name=display_name,
+                is_dm=True,
+                dm_user_ids=dm_user_ids,
+                first_message_id=message.id,
+            )
+
+        topic = topics[topic_key]
+        topic.message_count += 1
+
+        if not message.sender.is_bot:
+            topic.human_senders.add(message.sender.full_name)
+
+        topic.latest_message_id = message.id
+        topic.latest_date_sent = message.date_sent
+
+        if len(topic.sample_messages) < MAX_SAMPLE_MESSAGES_PER_TOPIC:
+            topic.sample_messages.append(
+                {
+                    "id": message.id,
+                    "sender_full_name": message.sender.full_name,
+                    "content": message.content[:200],
+                    "date_sent": str(message.date_sent),
+                }
+            )
+
+    # Populate display names and user IDs for group DM conversations.
+    for topic_key, topic in topics.items():
+        if topic_key[1].startswith("group-dm:"):
+            recipient_id = int(topic_key[1].split(":")[1])
+            try:
+                recipient = Recipient.objects.get(id=recipient_id)
+                user_ids = list(get_direct_message_group_user_ids(recipient))
+                other_user_ids = sorted(
+                    uid for uid in user_ids if uid != user_profile.id
+                )
+                names = list(
+                    UserProfile.objects.filter(id__in=other_user_ids)
+                    .order_by("full_name")
+                    .values_list("full_name", flat=True)
+                )
+                topic.topic_name = ", ".join(names) if names else "Group DM"
+                topic.dm_user_ids = other_user_ids
+            except Recipient.DoesNotExist:
+                topic.topic_name = "Group DM"
+
+    return topics

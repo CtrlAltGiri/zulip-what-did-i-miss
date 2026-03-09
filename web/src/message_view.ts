@@ -22,6 +22,7 @@ import {Filter} from "./filter.ts";
 import * as hash_parser from "./hash_parser.ts";
 import * as hash_util from "./hash_util.ts";
 import {$t} from "./i18n.ts";
+import * as catch_up_ui from "./catch_up_ui.ts";
 import * as inbox_ui from "./inbox_ui.ts";
 import * as inbox_util from "./inbox_util.ts";
 import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts";
@@ -490,6 +491,7 @@ export let show = (raw_terms: NarrowTerm[], show_opts: ShowMessageViewOpts): voi
 
     const coming_from_recent_view = recent_view_util.is_visible();
     const coming_from_inbox = inbox_util.is_visible();
+    const coming_from_catch_up = catch_up_ui.is_visible();
 
     const preserve_zoomed_in_channel =
         stream_list.is_zoomed_in() &&
@@ -669,6 +671,8 @@ export let show = (raw_terms: NarrowTerm[], show_opts: ShowMessageViewOpts): voi
             recent_view_ui.hide();
         } else if (coming_from_inbox) {
             inbox_ui.hide();
+        } else if (coming_from_catch_up) {
+            catch_up_ui.hide();
         }
 
         blueslip.debug("Narrowed", {

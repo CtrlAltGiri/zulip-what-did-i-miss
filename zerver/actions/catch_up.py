@@ -17,6 +17,7 @@ from zerver.lib.catch_up import (
     annotate_mention_flags,
     annotate_reaction_counts,
     clamp_since_time,
+    get_catch_up_dm_messages,
     get_catch_up_messages,
     get_last_active_time,
     get_subscribed_stream_map,
@@ -70,21 +71,25 @@ def do_get_catch_up_data(
         "topics": [],
     }
 
-    if not stream_map:
-        return empty_response
-
     # Step 3: Aggregate messages by stream/topic.
-    topics = get_catch_up_messages(
-        user_profile=user_profile,
-        since=since,
-        stream_map=stream_map,
-        include_muted=include_muted,
-    )
+    topics: dict[tuple[int, str], CatchUpTopic] = {}
+    if stream_map:
+        topics = get_catch_up_messages(
+            user_profile=user_profile,
+            since=since,
+            stream_map=stream_map,
+            include_muted=include_muted,
+        )
+
+    # Step 3b: Aggregate DM messages.
+    dm_topics = get_catch_up_dm_messages(user_profile, since)
+    topics.update(dm_topics)
 
     if not topics:
         return empty_response
 
-    # Step 4: Annotate with mention flags and reaction counts.
+    # Step 4: Annotate stream topics with mention flags and reaction counts.
+    # DM topics (stream_id == 0) are naturally skipped by these functions.
     annotate_mention_flags(user_profile, topics, since)
     annotate_reaction_counts(topics, since, user_profile.realm_id)
 
@@ -118,6 +123,9 @@ def _annotate_extractive_summaries(
     Modifies the CatchUpTopic objects in-place.
     """
     for topic in topics:
+        if topic.is_dm:
+            continue
+
         # Extract key messages for this topic.
         topic.key_messages = extract_key_messages(
             user_profile=user_profile,
