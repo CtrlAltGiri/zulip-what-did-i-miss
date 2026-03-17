@@ -67,7 +67,7 @@ def get_last_active_time(user_profile: UserProfile) -> datetime:
     """
     # TODO: Remove this override after testing.
     # Force 24h lookback for development testing.
-    #return timezone_now() - timedelta(hours=24)
+    return timezone_now() - timedelta(hours=24)
 
     # Try presence data first.
     try:
