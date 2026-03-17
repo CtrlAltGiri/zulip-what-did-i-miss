@@ -10,13 +10,14 @@ import * as hash_util from "./hash_util.ts";
 import * as inbox_ui from "./inbox_ui.ts";
 import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts";
 import * as recent_view_ui from "./recent_view_ui.ts";
+import * as rendered_markdown from "./rendered_markdown.ts";
 import * as stream_data from "./stream_data.ts";
 import * as views_util from "./views_util.ts";
 
 let is_catch_up_visible = false;
 
 // Filter state
-type FilterMode = "all" | "mentions" | "important";
+type FilterMode = "all" | "mentions" | "important" | "ai-summary";
 let current_filter: FilterMode = "all";
 let current_stream_filter: number | "all" = "all";
 
@@ -94,6 +95,23 @@ function prepare_topic_for_render(topic: CatchUpTopic): Record<string, unknown> 
     };
 }
 
+function get_ai_summary_entries(
+    topics: CatchUpTopic[],
+): Array<{sender_full_name: string; rendered_content: string}> {
+    const entries: Array<{sender_full_name: string; rendered_content: string}> = [];
+
+    for (const topic of topics) {
+        for (const message of topic.all_messages) {
+            entries.push({
+                sender_full_name: message.sender_full_name,
+                rendered_content: message.rendered_content ?? message.content,
+            });
+        }
+    }
+
+    return entries;
+}
+
 function get_unique_streams(
     topics: CatchUpTopic[],
 ): Array<{id: number; name: string}> {
@@ -124,6 +142,7 @@ function render_empty(): void {
 function render_data(data: catch_up_data.CatchUpData): void {
     const topics = data.topics.map((topic) => prepare_topic_for_render(topic));
     const streams = get_unique_streams(data.topics);
+    const ai_summary_entries = get_ai_summary_entries(data.topics);
 
     const html = render_catch_up_view({
         loading: false,
@@ -134,16 +153,29 @@ function render_data(data: catch_up_data.CatchUpData): void {
         topics,
         streams,
         has_streams: streams.length > 0,
+        has_ai_summary_entries: ai_summary_entries.length > 0,
+        ai_summary_entries,
+        is_all_filter: current_filter === "all",
+        is_mentions_filter: current_filter === "mentions",
+        is_important_filter: current_filter === "important",
+        is_ai_summary_filter: current_filter === "ai-summary",
     });
 
     $("#catch-up-pane").html(html);
 
+    $("#catch-up-pane")
+        .find(".rendered_markdown")
+        .each(function () {
+            rendered_markdown.update_elements($(this));
+        });
+
     // Reset filter and focus state for fresh render.
-    current_filter = "all";
-    current_stream_filter = "all";
     card_focus = -1;
 
     setup_event_handlers();
+    if (current_filter !== "ai-summary") {
+        apply_filters();
+    }
 }
 
 function setup_event_handlers(): void {
@@ -185,9 +217,10 @@ function setup_event_handlers(): void {
             return;
         }
         current_filter = filter;
-        $(".catch-up-filter-btn").removeClass("active");
-        $(this).addClass("active");
-        apply_filters();
+        const data = catch_up_data.get_current_data();
+        if (data !== undefined) {
+            render_data(data);
+        }
     });
 
     // Stream filter dropdown.
