@@ -40,6 +40,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from zerver.lib.url_encoding import encode_channel, encode_hash_component
+
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -80,9 +82,7 @@ class CatchUpSummary:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _narrow_url(stream_id: int, stream_name: str, topic: str) -> str:
-    encoded_stream = stream_name.replace(" ", "-")
-    encoded_topic = topic.replace(" ", ".").replace("/", ".")
-    return f"#narrow/channel/{stream_id}-{encoded_stream}/topic/{encoded_topic}"
+    return f"#narrow/{encode_channel(stream_id, stream_name, with_operator=True)}/topic/{encode_hash_component(topic)}"
 
 
 def _build_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

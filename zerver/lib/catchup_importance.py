@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from zerver.lib.url_encoding import encode_channel, encode_hash_component
+
 # ── Scoring weights (per spec) ────────────────────────────────────────────────
 W_DIRECT_MENTION    = 5.0
 W_WILDCARD_MENTION  = 3.0
@@ -50,10 +52,7 @@ class ScoredTopic:
 
 def _narrow_url(stream_id: int, stream_name: str, topic: str) -> str:
     """Build a Zulip deep-link URL for a stream/topic narrow."""
-    # Encode spaces as dots in the URL per Zulip convention
-    encoded_stream = stream_name.replace(" ", "-")
-    encoded_topic  = topic.replace(" ", ".").replace("/", ".")
-    return f"#narrow/channel/{stream_id}-{encoded_stream}/topic/{encoded_topic}"
+    return f"#narrow/{encode_channel(stream_id, stream_name, with_operator=True)}/topic/{encode_hash_component(topic)}"
 
 
 def score_topics(
