@@ -41,7 +41,6 @@ type TopicData = {
 let cached_topics: TopicData[] = [];
 let total_messages = 0;
 let cached_summary = "";
-let is_demo_mode = false;
 
 // ── Demo / Simulation data (used when API returns no unread messages) ──────────
 
@@ -278,7 +277,6 @@ export function hide(): void {
         return;
     }
     is_visible = false;
-    is_demo_mode = false;
     $(document).off("click.catch-up");
     $("#catch-up-view").remove();
     $(".app-main .column-middle").css("position", "");
@@ -522,16 +520,16 @@ function build_demo_claude_response(): ClaudeSummaryResponse {
         overview: DEMO_SUMMARY.split("\n")[0]!,
         keywords: ["authentication", "OAuth2", "NLP pipeline", "CI/CD", "hotfix", "deploy"],
         action_items: [
-            {text: "Update the CI/CD pipeline to run NLP tests on every PR", assignee: "Dennis", message_id: null, narrow_url: null},
-            {text: "Review the PR before the standup — wireframes ready", assignee: "You", message_id: null, narrow_url: null},
-            {text: "Validate keyword extraction results and give sign-off", assignee: "You", message_id: null, narrow_url: null},
-            {text: "Security review of auth middleware refactor", assignee: "You", message_id: null, narrow_url: null},
-            {text: "Deploy hotfix to staging by EOD today", assignee: "Giridhar", message_id: null, narrow_url: null},
+            {text: "Update the CI/CD pipeline to run NLP tests on every PR", assignee: "Dennis", message_id: 1002, narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"},
+            {text: "Review the PR before the standup — wireframes ready", assignee: "You", message_id: 1003, narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"},
+            {text: "Validate keyword extraction results and give sign-off", assignee: "You", message_id: 1006, narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review"},
+            {text: "Security review of auth middleware refactor", assignee: "You", message_id: 1012, narrow_url: "#narrow/channel/4-devel/topic/Auth.middleware.refactor"},
+            {text: "Deploy hotfix to staging by EOD today", assignee: "Giridhar", message_id: 1009, narrow_url: "#narrow/channel/5-test/topic/Deploy.schedule"},
         ],
         topics: [
-            {stream: "devel", topic: "Sprint 2 planning", summary: "Team agreed to use OAuth2 for authentication. PR review and CI/CD updates were requested.", narrow_url: "", key_messages: [{id: 1002, excerpt: "TODO: Update the CI/CD pipeline to run NLP tests", narrow_url: ""}, {id: 1003, excerpt: "Please review the PR before the standup", narrow_url: ""}]},
-            {stream: "devel", topic: "NLP pipeline review", summary: "Extractive summarization is working well with 70%+ confidence. Sign-off needed on keyword extraction.", narrow_url: "", key_messages: [{id: 1005, excerpt: "Confidence scores above 70% on test data", narrow_url: ""}, {id: 1006, excerpt: "Can you validate the keyword extraction results?", narrow_url: ""}]},
-            {stream: "test", topic: "Deploy schedule", summary: "@all: hotfix deployment at 5 PM today. Staging tests passed.", narrow_url: "", key_messages: [{id: 1008, excerpt: "Hotfix deployment scheduled for 5 PM today", narrow_url: ""}]},
+            {stream: "devel", topic: "Sprint 2 planning", summary: "Team agreed to use OAuth2 for authentication. PR review and CI/CD updates were requested.", narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning", key_messages: [{id: 1002, excerpt: "TODO: Update the CI/CD pipeline to run NLP tests", narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"}, {id: 1003, excerpt: "Please review the PR before the standup", narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"}]},
+            {stream: "devel", topic: "NLP pipeline review", summary: "Extractive summarization is working well with 70%+ confidence. Sign-off needed on keyword extraction.", narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review", key_messages: [{id: 1005, excerpt: "Confidence scores above 70% on test data", narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review"}, {id: 1006, excerpt: "Can you validate the keyword extraction results?", narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review"}]},
+            {stream: "test", topic: "Deploy schedule", summary: "@all: hotfix deployment at 5 PM today. Staging tests passed.", narrow_url: "#narrow/channel/5-test/topic/Deploy.schedule", key_messages: [{id: 1008, excerpt: "Hotfix deployment scheduled for 5 PM today", narrow_url: "#narrow/channel/5-test/topic/Deploy.schedule"}]},
         ],
         model_used: "demo",
         message_count: 12,
@@ -686,7 +684,6 @@ function load_topics(): void {
 function apply_data(topics: TopicData[], total: number, is_demo: boolean): void {
     cached_topics = topics;
     total_messages = total;
-    is_demo_mode = is_demo;
 
     const topic_count = topics.length;
     const mention_count = topics.filter((t) => t.has_mention).length;
@@ -797,13 +794,6 @@ function render_card(topic: TopicData): JQuery {
         )
         .join("");
 
-    const open_link = is_demo_mode
-        ? `<span style="font-size:12px; color:#bbb; font-style:italic;">demo data</span>`
-        : `<a href="${topic.narrow_url}" style="
-                font-size: 12px; color: hsl(218,57%,38%);
-                font-weight: 600; text-decoration: none;
-            ">Open conversation ↗</a>`;
-
     const footer = `
         <div style="
             padding: 7px 16px; font-size: 12px; color: #aaa;
@@ -811,7 +801,10 @@ function render_card(topic: TopicData): JQuery {
             display: flex; justify-content: space-between; align-items: center;
         ">
             <span>${topic.message_count} message${topic.message_count === 1 ? "" : "s"} · ${topic.sender_count} sender${topic.sender_count === 1 ? "" : "s"}</span>
-            ${open_link}
+            <a href="${topic.narrow_url}" style="
+                font-size: 12px; color: hsl(218,57%,38%);
+                font-weight: 600; text-decoration: none;
+            ">Open conversation ↗</a>
         </div>
     `;
 
