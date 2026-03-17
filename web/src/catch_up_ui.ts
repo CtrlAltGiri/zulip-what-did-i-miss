@@ -544,6 +544,20 @@ function esc(s: string): string {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Look up the narrow_url for a given stream+topic from the already-fetched
+ * cached_topics. This guarantees we always use properly-encoded URLs from
+ * the backend rather than trusting Claude to copy them verbatim.
+ */
+function resolve_narrow_url(stream: string, topic: string): string {
+    const t = cached_topics.find(
+        (ct) =>
+            ct.stream_name.toLowerCase() === stream.toLowerCase() &&
+            ct.topic.toLowerCase() === topic.toLowerCase(),
+    );
+    return t?.narrow_url ?? "";
+}
+
 function render_claude_summary(data: ClaudeSummaryResponse): string {
     let html = `<div style="padding:18px 20px;">`;
 
@@ -586,8 +600,31 @@ function render_claude_summary(data: ClaudeSummaryResponse): string {
                 ? `<span style="background:#fef3c7; color:#92400e; border-radius:4px;
                     padding:1px 7px; font-size:11px; font-weight:700; flex-shrink:0;">${esc(item.assignee)}</span>`
                 : "";
-            const src_link = item.narrow_url
-                ? `<span style="flex-shrink:0;">${link(item.narrow_url, "View source")}</span>`
+            // Resolve from cached_topics to avoid trusting Claude's URL encoding
+            const resolved_action_url = (() => {
+                if (!item.narrow_url) return "";
+                // Try to match by topic name across all cached topics
+                // Claude's narrow_url format: #narrow/channel/{id}-{name}/topic/{encoded_topic}
+                // Extract the topic portion and match against cached topics
+                const topic_match = /\/topic\/(.+)$/.exec(item.narrow_url);
+                if (topic_match) {
+                    const raw_topic = topic_match[1]!
+                        .replaceAll(".", "%")
+                        .replaceAll(/%(?![0-9A-Fa-f]{2})/g, "%25");
+                    try {
+                        const decoded_topic = decodeURIComponent(raw_topic);
+                        const found = cached_topics.find(
+                            (ct) => ct.topic.toLowerCase() === decoded_topic.toLowerCase(),
+                        );
+                        if (found) return found.narrow_url;
+                    } catch {
+                        // fall through to direct use
+                    }
+                }
+                return "";
+            })();
+            const src_link = resolved_action_url
+                ? `<span style="flex-shrink:0;">${link(resolved_action_url, "View source")}</span>`
                 : "";
             html += `
                 <div style="display:flex; align-items:flex-start; gap:8px;
@@ -611,6 +648,8 @@ function render_claude_summary(data: ClaudeSummaryResponse): string {
                 <div style="display:flex; flex-direction:column; gap:8px;">
         `;
         for (const t of data.topics) {
+            // Always resolve from cached_topics — never trust Claude's URL encoding
+            const topic_narrow_url = resolve_narrow_url(t.stream, t.topic);
             const key_msg_links = t.key_messages
                 .map(
                     (km) =>
@@ -619,7 +658,7 @@ function render_claude_summary(data: ClaudeSummaryResponse): string {
                             border-radius:5px; margin-top:4px;">
                             <span style="color:#aaa; font-size:11px; flex-shrink:0; margin-top:1px;">↳</span>
                             <span style="flex:1; font-size:12.5px; color:#444; line-height:1.5;">${esc(km.excerpt)}</span>
-                            ${km.narrow_url ? link(km.narrow_url, "Jump") : ""}
+                            ${topic_narrow_url ? link(topic_narrow_url, "Jump") : ""}
                         </div>`,
                 )
                 .join("");
@@ -631,7 +670,7 @@ function render_claude_summary(data: ClaudeSummaryResponse): string {
                         <span style="background:#1c3a5e; color:#fff; border-radius:4px;
                             padding:2px 8px; font-size:11px; font-weight:700;">#${esc(t.stream)}</span>
                         <span style="font-size:13px; font-weight:600; flex:1; color:#222;">${esc(t.topic)}</span>
-                        ${t.narrow_url ? link(t.narrow_url, "View thread") : ""}
+                        ${topic_narrow_url ? link(topic_narrow_url, "View thread") : ""}
                     </div>
                     <div style="padding:8px 12px;">
                         <div style="font-size:13px; color:#444; line-height:1.6; margin-bottom:4px;">${esc(t.summary)}</div>
