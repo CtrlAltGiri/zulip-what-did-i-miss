@@ -503,36 +503,55 @@ function fetch_claude_summary(): void {
             }
         },
         error(xhr: {responseJSON?: {msg?: string}}) {
-            const msg = xhr.responseJSON?.msg ?? $t({defaultMessage: "Failed to generate summary."});
-            // Fall back to demo structured data so UI is still demonstrable
+            const msg = xhr.responseJSON?.msg ?? "Failed to generate summary.";
             cached_claude_response = build_demo_claude_response();
+            // Patch the overview to show the actual server error
+            cached_claude_response = {
+                ...cached_claude_response,
+                overview: `⚠️ Claude API error: ${msg}\n\n${cached_claude_response.overview}`,
+            };
             if (summary_panel_open) {
                 show_summary_panel(cached_claude_response);
             }
-            void msg; // suppress unused warning — error shown via demo fallback
         },
     });
 }
 
 function build_demo_claude_response(): ClaudeSummaryResponse {
+    // Build using real cached_topics so narrow URLs are always valid
+    const top_topics = cached_topics.slice(0, 5);
+    const topics = top_topics.map((t) => ({
+        stream: t.stream_name,
+        topic: t.topic,
+        summary: `${t.message_count} message${t.message_count === 1 ? "" : "s"} from ${t.sender_count} participant${t.sender_count === 1 ? "" : "s"}.`,
+        narrow_url: t.narrow_url,
+        key_messages: t.sample_messages.slice(0, 2).map((m) => ({
+            id: m.id,
+            excerpt: m.content.slice(0, 80),
+            narrow_url: t.narrow_url,
+        })),
+    }));
+
+    const action_items = cached_topics
+        .filter((t) => t.has_mention || t.score >= 5)
+        .slice(0, 3)
+        .map((t) => ({
+            text: `Review activity in #${t.stream_name} > ${t.topic}`,
+            assignee: "You",
+            message_id: t.latest_message_id,
+            narrow_url: t.narrow_url,
+        }));
+
+    const stream_names = [...new Set(cached_topics.map((t) => t.stream_name))];
+
     return {
         structured: true,
-        overview: DEMO_SUMMARY.split("\n")[0]!,
-        keywords: ["authentication", "OAuth2", "NLP pipeline", "CI/CD", "hotfix", "deploy"],
-        action_items: [
-            {text: "Update the CI/CD pipeline to run NLP tests on every PR", assignee: "Dennis", message_id: 1002, narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"},
-            {text: "Review the PR before the standup — wireframes ready", assignee: "You", message_id: 1003, narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"},
-            {text: "Validate keyword extraction results and give sign-off", assignee: "You", message_id: 1006, narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review"},
-            {text: "Security review of auth middleware refactor", assignee: "You", message_id: 1012, narrow_url: "#narrow/channel/4-devel/topic/Auth.middleware.refactor"},
-            {text: "Deploy hotfix to staging by EOD today", assignee: "Giridhar", message_id: 1009, narrow_url: "#narrow/channel/5-test/topic/Deploy.schedule"},
-        ],
-        topics: [
-            {stream: "devel", topic: "Sprint 2 planning", summary: "Team agreed to use OAuth2 for authentication. PR review and CI/CD updates were requested.", narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning", key_messages: [{id: 1002, excerpt: "TODO: Update the CI/CD pipeline to run NLP tests", narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"}, {id: 1003, excerpt: "Please review the PR before the standup", narrow_url: "#narrow/channel/4-devel/topic/Sprint.2.planning"}]},
-            {stream: "devel", topic: "NLP pipeline review", summary: "Extractive summarization is working well with 70%+ confidence. Sign-off needed on keyword extraction.", narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review", key_messages: [{id: 1005, excerpt: "Confidence scores above 70% on test data", narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review"}, {id: 1006, excerpt: "Can you validate the keyword extraction results?", narrow_url: "#narrow/channel/4-devel/topic/NLP.pipeline.review"}]},
-            {stream: "test", topic: "Deploy schedule", summary: "@all: hotfix deployment at 5 PM today. Staging tests passed.", narrow_url: "#narrow/channel/5-test/topic/Deploy.schedule", key_messages: [{id: 1008, excerpt: "Hotfix deployment scheduled for 5 PM today", narrow_url: "#narrow/channel/5-test/topic/Deploy.schedule"}]},
-        ],
-        model_used: "demo",
-        message_count: 12,
+        overview: `You missed ${total_messages} messages across ${cached_topics.length} topic${cached_topics.length === 1 ? "" : "s"}. (AI summary unavailable — showing local overview.)`,
+        keywords: stream_names,
+        action_items,
+        topics,
+        model_used: "local-fallback",
+        message_count: total_messages,
     };
 }
 
