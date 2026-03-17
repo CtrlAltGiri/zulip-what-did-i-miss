@@ -62,8 +62,19 @@ function format_period_display(hours: number): string {
 }
 
 function prepare_topic_for_render(topic: CatchUpTopic): Record<string, unknown> {
-    const stream_color = stream_data.get_color(topic.stream_id);
-    const topic_url = hash_util.by_stream_topic_url(topic.stream_id, topic.topic_name);
+    const is_dm = topic.is_dm === true;
+    let stream_color: string;
+    let topic_url: string;
+
+    if (is_dm && topic.dm_user_ids && topic.dm_user_ids.length > 0) {
+        stream_color = "#607D8B";
+        const user_ids_string = topic.dm_user_ids.join(",");
+        topic_url = hash_util.pm_with_url(user_ids_string);
+    } else {
+        stream_color = stream_data.get_color(topic.stream_id);
+        topic_url = hash_util.by_stream_topic_url(topic.stream_id, topic.topic_name);
+    }
+
     const sender_list = topic.senders.join(", ");
 
     return {
@@ -71,6 +82,8 @@ function prepare_topic_for_render(topic: CatchUpTopic): Record<string, unknown> 
         stream_color,
         topic_url,
         sender_list,
+        is_dm,
+        data_is_dm: String(is_dm),
         // String versions for data- attributes (Handlebars can't render booleans).
         data_has_mention: String(topic.has_mention),
         data_has_wildcard: String(topic.has_wildcard_mention),
@@ -201,10 +214,6 @@ function setup_event_handlers(): void {
         toggle_card_expansion($card);
     });
 
-    // "Open topic" link click — stop propagation so it doesn't toggle the card.
-    $(".catch-up-open-topic").on("click", function (_this: HTMLElement, e) {
-        e.stopPropagation();
-    });
 }
 
 function toggle_card_expansion($card: JQuery): void {

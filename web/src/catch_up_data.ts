@@ -33,6 +33,8 @@ export type CatchUpTopic = {
     sample_messages: SampleMessage[];
     key_messages?: KeyMessage[];
     keywords?: string[];
+    is_dm?: boolean;
+    dm_user_ids?: number[];
     // Populated lazily when user clicks "Summarize"
     summary?: string;
 };

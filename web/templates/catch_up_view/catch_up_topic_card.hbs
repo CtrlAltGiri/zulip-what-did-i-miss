@@ -1,7 +1,14 @@
-<div class="catch-up-topic-card" data-stream-id="{{stream_id}}" data-topic-name="{{topic_name}}" data-has-mention="{{data_has_mention}}" data-has-wildcard="{{data_has_wildcard}}" data-score="{{score}}" tabindex="0" role="article" aria-label="{{stream_name}} › {{topic_name}}">
+<div class="catch-up-topic-card" data-stream-id="{{stream_id}}" data-topic-name="{{topic_name}}" data-has-mention="{{data_has_mention}}" data-has-wildcard="{{data_has_wildcard}}" data-score="{{score}}" data-is-dm="{{data_is_dm}}" tabindex="0" role="article" aria-label="{{stream_name}} › {{topic_name}}">
     <div class="catch-up-card-header">
         <div class="catch-up-card-title">
+            {{#if is_dm}}
+            <span class="catch-up-stream-name catch-up-dm-label">
+                <i class="zulip-icon zulip-icon-users" aria-hidden="true"></i>
+                {{t "Direct message" }}
+            </span>
+            {{else}}
             <span class="catch-up-stream-name" style="color: {{stream_color}}">{{stream_name}}</span>
+            {{/if}}
             <span class="catch-up-topic-separator">&rsaquo;</span>
             <span class="catch-up-topic-name">{{topic_name}}</span>
         </div>
@@ -60,12 +67,18 @@
         <div class="catch-up-card-actions">
             <a class="catch-up-open-topic" href="{{topic_url}}" tabindex="-1">
                 <i class="zulip-icon zulip-icon-external-link" aria-hidden="true"></i>
+                {{#if is_dm}}
+                {{t "Open conversation" }}
+                {{else}}
                 {{t "Open topic" }}
+                {{/if}}
             </a>
+            {{#unless is_dm}}
             <button class="catch-up-summarize-btn" data-stream-id="{{stream_id}}" data-topic-name="{{topic_name}}" tabindex="-1">
                 <i class="zulip-icon zulip-icon-bot" aria-hidden="true"></i>
                 {{t "AI Summary" }}
             </button>
+            {{/unless}}
         </div>
         <div class="catch-up-summary-container"></div>
     </div>

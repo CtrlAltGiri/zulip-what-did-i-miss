@@ -255,6 +255,13 @@
     white-space: nowrap;
 }
 
+.catch-up-dm-label {
+    color: #607d8b;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .catch-up-topic-separator {
     color: var(--color-text-default);
     opacity: 0.4;
