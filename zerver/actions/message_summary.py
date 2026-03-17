@@ -77,13 +77,38 @@ def get_max_summary_length(conversation_length: int) -> int:
     return min(6, 4 + int((conversation_length - 10) / 10))
 
 
+def _format_nlp_summary_as_markdown(message_list: list[dict[str, Any]]) -> str:
+    """
+    Run the local NLP pipeline and format the result as Zulip-flavoured
+    Markdown so it renders correctly in the existing topic-summary modal.
+    """
+    from zerver.lib.catchup_nlp import summarize_topic  # avoid circular at module level
+
+    result = summarize_topic(message_list)
+
+    parts: list[str] = [result.summary]
+
+    if result.keywords:
+        kw_line = "**Keywords:** " + ", ".join(f"`{k}`" for k in result.keywords)
+        parts.append(kw_line)
+
+    if result.action_items:
+        parts.append("**Action items:**")
+        for item in result.action_items:
+            attribution = f" *(from {item.source_sender})*" if item.source_sender else ""
+            parts.append(f"- {item.text}{attribution}")
+
+    conf_pct = int(result.confidence * 100)
+    parts.append(f"\n*Summary confidence: {conf_pct}% · {result.message_count} messages · local NLP*")
+
+    return "\n\n".join(parts)
+
+
 def do_summarize_narrow(
     user_profile: UserProfile,
     narrow: list[NarrowParameter] | None,
 ) -> str | None:
     model = settings.TOPIC_SUMMARIZATION_MODEL
-    if model is None:  # nocoverage
-        return None
 
     # TODO: This implementation does not attempt to make use of
     # caching previous summaries of the same conversation or rolling
@@ -126,6 +151,11 @@ def do_summarize_narrow(
         user_profile=user_profile,
         realm=user_profile.realm,
     )
+
+    # If no LLM is configured, fall back to the local NLP pipeline.
+    if model is None:
+        nlp_markdown = _format_nlp_summary_as_markdown(message_list)
+        return markdown_convert(nlp_markdown, message_realm=user_profile.realm).rendered_content
 
     # IDEA: We could consider translating input and output text to
     # English to improve results when using a summarization model that

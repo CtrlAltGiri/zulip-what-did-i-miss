@@ -571,7 +571,8 @@ def fetch_initial_state_data(
             else server_default_jitsi_server_url
         )
 
-        state["server_can_summarize_topics"] = settings.TOPIC_SUMMARIZATION_MODEL is not None
+        # True when an LLM is configured OR the local NLP pipeline is available as fallback.
+        state["server_can_summarize_topics"] = True
 
         for channel_field in [
             "moderation_request_channel_id",

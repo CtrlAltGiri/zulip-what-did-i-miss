@@ -2,6 +2,7 @@ import $ from "jquery";
 import * as z from "zod/mini";
 
 import * as about_zulip from "./about_zulip.ts";
+import * as catch_up_ui from "./catch_up_ui.ts";
 import * as admin from "./admin.ts";
 import * as blueslip from "./blueslip.ts";
 import * as browser_history from "./browser_history.ts";
@@ -183,6 +184,10 @@ function do_hashchange_normal(from_reload: boolean, restore_selected_id: boolean
         narrow_opts.show_more_topics = data_for_hash.show_more_topics ?? false;
     }
 
+    if (hash[0] !== "#catch-up" && catch_up_ui.get_is_visible()) {
+        catch_up_ui.hide();
+    }
+
     switch (hash[0]) {
         case "#topics":
         case "#narrow": {
@@ -251,6 +256,9 @@ function do_hashchange_normal(from_reload: boolean, restore_selected_id: boolean
             break;
         case "#feed":
             show_all_message_view(narrow_opts);
+            break;
+        case "#catch-up":
+            catch_up_ui.show();
             break;
         case "#keyboard-shortcuts":
         case "#message-formatting":

@@ -24,11 +24,11 @@ def get_messages_summary(
     *,
     narrow: Json[list[NarrowParameter] | None] = None,
 ) -> HttpResponse:
-    if settings.TOPIC_SUMMARIZATION_MODEL is None:  # nocoverage
-        raise JsonableError(_("AI features are not enabled on this server."))
-
-    if not user_profile.can_summarize_topics():
-        raise JsonableError(_("Insufficient permission"))
+    # When no LLM is configured, fall back to the local NLP pipeline —
+    # no permission check needed since no external API or credits are consumed.
+    if settings.TOPIC_SUMMARIZATION_MODEL is not None:
+        if not user_profile.can_summarize_topics():
+            raise JsonableError(_("Insufficient permission"))
 
     if settings.MAX_PER_USER_MONTHLY_AI_COST is not None:
         used_credits = COUNT_STATS["ai_credit_usage::day"].current_month_accumulated_count_for_user(
