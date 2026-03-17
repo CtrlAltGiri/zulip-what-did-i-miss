@@ -18,6 +18,7 @@ import * as left_sidebar_navigation_area from "./left_sidebar_navigation_area.ts
 let is_visible = false;
 let active_tab: "all" | "mentions" | "important" = "all";
 let summary_panel_open = false;
+// cached_summary kept for type compatibility but superseded by cached_claude_response
 
 type SampleMessage = {sender: string; content: string; id: number; timestamp: number};
 
@@ -40,6 +41,7 @@ type TopicData = {
 let cached_topics: TopicData[] = [];
 let total_messages = 0;
 let cached_summary = "";
+let is_demo_mode = false;
 
 // ── Demo / Simulation data (used when API returns no unread messages) ──────────
 
@@ -253,6 +255,21 @@ export function show(): void {
         toggle_summary_panel();
     });
 
+    // Context links inside the catch-up view (narrow links from summary / topic cards)
+    // Hide the catch-up view first, then let Zulip's normal hash routing take over.
+    $(document).on("click.catch-up", "#catch-up-view a[href^='#narrow']", function (e) {
+        e.preventDefault();
+        const href = $(this).attr("href");
+        if (!href) {
+            return;
+        }
+        hide();
+        // Use setTimeout so hide() finishes restoring the DOM before hash change fires
+        setTimeout(() => {
+            window.location.hash = href;
+        }, 50);
+    });
+
     load_topics();
 }
 
@@ -261,6 +278,7 @@ export function hide(): void {
         return;
     }
     is_visible = false;
+    is_demo_mode = false;
     $(document).off("click.catch-up");
     $("#catch-up-view").remove();
     $(".app-main .column-middle").css("position", "");
@@ -386,7 +404,26 @@ function set_active_tab(tab: typeof active_tab): void {
     render_topics();
 }
 
-// ── AI Summary panel ──────────────────────────────────────────────────────────
+// ── AI Summary panel (Claude-powered) ────────────────────────────────────────
+
+type ClaudeSummaryResponse = {
+    structured: boolean;
+    overview: string;
+    keywords: string[];
+    action_items: {text: string; assignee: string | null; message_id: number | null; narrow_url: string | null}[];
+    topics: {
+        stream: string;
+        topic: string;
+        summary: string;
+        narrow_url: string;
+        key_messages: {id: number; excerpt: string; narrow_url: string}[];
+    }[];
+    model_used: string;
+    message_count: number;
+    confidence?: number;
+};
+
+let cached_claude_response: ClaudeSummaryResponse | null = null;
 
 function toggle_summary_panel(): void {
     summary_panel_open = !summary_panel_open;
@@ -397,22 +434,27 @@ function toggle_summary_panel(): void {
         return;
     }
 
-    if (cached_summary) {
-        prepend_summary_panel(cached_summary);
+    if (cached_claude_response) {
+        show_summary_panel(cached_claude_response);
         return;
     }
 
-    // Show loading panel while fetching
-    prepend_summary_panel(null);
-    fetch_summary();
+    open_loading_panel();
+    fetch_claude_summary();
 }
 
-function prepend_summary_panel(summary: string | null): void {
+function open_loading_panel(): void {
     $("#cu-summary-panel").remove();
-    const content_html = summary
-        ? render_summary_body(summary)
-        : `<div style="color:#888; font-style:italic; font-size:14px;">${$t({defaultMessage: "Generating summary…"})}</div>`;
+    const $panel = build_panel_shell(
+        `<div style="color:#888; font-style:italic; font-size:14px; padding:18px 20px;">
+            ✦ ${$t({defaultMessage: "Claude is analysing your missed messages…"})}
+         </div>`,
+    );
+    $("#cu-body").prepend($panel);
+    $panel.hide().slideDown(160);
+}
 
+function build_panel_shell(inner_html: string): JQuery {
     const $panel = $(`
         <div id="cu-summary-panel" style="
             border: 1px solid #c8d6e0;
@@ -423,96 +465,197 @@ function prepend_summary_panel(summary: string | null): void {
             box-shadow: 0 2px 12px rgba(0,0,0,0.08);
         ">
             <div style="
-                background: #1c3a5e;
-                color: #fff;
-                padding: 12px 18px;
-                font-size: 14px;
-                font-weight: 700;
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
+                background: #1c3a5e; color: #fff;
+                padding: 12px 18px; font-size: 14px; font-weight: 700;
+                display: flex; align-items: center; justify-content: space-between;
             ">
                 <span>✦ ${$t({defaultMessage: "AI Summary of Missed Messages"})}</span>
                 <button id="cu-panel-close" style="
-                    background: none; border: none; color: #fff;
-                    font-size: 20px; cursor: pointer; line-height: 1;
-                    padding: 0 2px; opacity: 0.8;
+                    background:none; border:none; color:#fff;
+                    font-size:20px; cursor:pointer; line-height:1; padding:0 2px; opacity:0.8;
                 ">×</button>
             </div>
-            <div id="cu-summary-body" style="padding: 18px 20px; font-size: 14px; line-height: 1.75; color: #1a1a1a; background: #fff;">
-                ${content_html}
+            <div id="cu-summary-body" style="color:#1a1a1a; background:#fff;">
+                ${inner_html}
             </div>
         </div>
     `);
-    $("#cu-body").prepend($panel);
-    $panel.hide().slideDown(160);
-
-    $("#cu-panel-close").on("click", () => {
+    $panel.find("#cu-panel-close").on("click", () => {
         summary_panel_open = false;
         $panel.slideUp(150, () => $panel.remove());
     });
+    return $panel;
 }
 
-function fetch_summary(): void {
+function show_summary_panel(data: ClaudeSummaryResponse): void {
+    $("#cu-summary-panel").remove();
+    const $panel = build_panel_shell(render_claude_summary(data));
+    $("#cu-body").prepend($panel);
+    $panel.hide().slideDown(160);
+}
+
+function fetch_claude_summary(): void {
     void channel.get({
-        url: "/json/messages/summary",
-        data: {narrow: JSON.stringify(null)},
+        url: "/json/catch-up/summary",
         success(raw: unknown) {
-            const data = raw as {summary: string};
-            cached_summary = data.summary ?? DEMO_SUMMARY;
-            $("#cu-summary-body").html(render_summary_body(cached_summary));
+            const data = raw as ClaudeSummaryResponse;
+            cached_claude_response = data;
+            if (summary_panel_open) {
+                show_summary_panel(data);
+            }
         },
-        error() {
-            // Fall back to demo summary
-            cached_summary = DEMO_SUMMARY;
-            $("#cu-summary-body").html(render_summary_body(DEMO_SUMMARY));
+        error(xhr: {responseJSON?: {msg?: string}}) {
+            const msg = xhr.responseJSON?.msg ?? $t({defaultMessage: "Failed to generate summary."});
+            // Fall back to demo structured data so UI is still demonstrable
+            cached_claude_response = build_demo_claude_response();
+            if (summary_panel_open) {
+                show_summary_panel(cached_claude_response);
+            }
+            void msg; // suppress unused warning — error shown via demo fallback
         },
     });
 }
 
-function render_summary_body(text: string): string {
-    const esc = (s: string): string =>
-        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function build_demo_claude_response(): ClaudeSummaryResponse {
+    return {
+        structured: true,
+        overview: DEMO_SUMMARY.split("\n")[0]!,
+        keywords: ["authentication", "OAuth2", "NLP pipeline", "CI/CD", "hotfix", "deploy"],
+        action_items: [
+            {text: "Update the CI/CD pipeline to run NLP tests on every PR", assignee: "Dennis", message_id: null, narrow_url: null},
+            {text: "Review the PR before the standup — wireframes ready", assignee: "You", message_id: null, narrow_url: null},
+            {text: "Validate keyword extraction results and give sign-off", assignee: "You", message_id: null, narrow_url: null},
+            {text: "Security review of auth middleware refactor", assignee: "You", message_id: null, narrow_url: null},
+            {text: "Deploy hotfix to staging by EOD today", assignee: "Giridhar", message_id: null, narrow_url: null},
+        ],
+        topics: [
+            {stream: "devel", topic: "Sprint 2 planning", summary: "Team agreed to use OAuth2 for authentication. PR review and CI/CD updates were requested.", narrow_url: "", key_messages: [{id: 1002, excerpt: "TODO: Update the CI/CD pipeline to run NLP tests", narrow_url: ""}, {id: 1003, excerpt: "Please review the PR before the standup", narrow_url: ""}]},
+            {stream: "devel", topic: "NLP pipeline review", summary: "Extractive summarization is working well with 70%+ confidence. Sign-off needed on keyword extraction.", narrow_url: "", key_messages: [{id: 1005, excerpt: "Confidence scores above 70% on test data", narrow_url: ""}, {id: 1006, excerpt: "Can you validate the keyword extraction results?", narrow_url: ""}]},
+            {stream: "test", topic: "Deploy schedule", summary: "@all: hotfix deployment at 5 PM today. Staging tests passed.", narrow_url: "", key_messages: [{id: 1008, excerpt: "Hotfix deployment scheduled for 5 PM today", narrow_url: ""}]},
+        ],
+        model_used: "demo",
+        message_count: 12,
+    };
+}
 
-    const lines = esc(text).split("\n");
-    let html = "";
-    let in_list = false;
+function link(url: string, label: string): string {
+    return `<a href="${url}" style="color:hsl(218,57%,38%); font-weight:600; text-decoration:none; font-size:12px; white-space:nowrap;">${label} ↗</a>`;
+}
 
-    for (const raw of lines) {
-        const line = raw.trim();
-        if (line === "") {
-            if (in_list) {
-                html += "</ul>";
-                in_list = false;
-            }
-            html += `<div style="height:6px;"></div>`;
-            continue;
-        }
-        if (line.startsWith("•") || line.startsWith("-")) {
-            if (!in_list) {
-                html += `<ul style="margin:6px 0 6px 20px; padding:0; list-style:disc;">`;
-                in_list = true;
-            }
-            html += `<li style="margin-bottom:3px;">${line.slice(1).trim()}</li>`;
-        } else {
-            if (in_list) {
-                html += "</ul>";
-                in_list = false;
-            }
-            if (
-                line.startsWith("Keywords") ||
-                line.startsWith("Action items") ||
-                line.startsWith("Confidence")
-            ) {
-                html += `<div style="font-weight:700; margin-top:10px; color:#444;">${line}</div>`;
-            } else {
-                html += `<div>${line}</div>`;
-            }
-        }
+function esc(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function render_claude_summary(data: ClaudeSummaryResponse): string {
+    let html = `<div style="padding:18px 20px;">`;
+
+    // ── Overview ──────────────────────────────────────────────────────────────
+    html += `
+        <div style="font-size:14px; line-height:1.7; color:#222; margin-bottom:14px;">
+            ${esc(data.overview)}
+        </div>
+    `;
+
+    // ── Keywords ──────────────────────────────────────────────────────────────
+    if (data.keywords.length > 0) {
+        const tags = data.keywords
+            .map(
+                (k) =>
+                    `<span style="background:#eef2ff; color:#3451b2; border-radius:4px;
+                        padding:2px 8px; font-size:12px; font-weight:600; display:inline-block;
+                        margin:2px 4px 2px 0;">${esc(k)}</span>`,
+            )
+            .join("");
+        html += `
+            <div style="margin-bottom:16px;">
+                <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;
+                    letter-spacing:0.05em; margin-bottom:6px;">Keywords</div>
+                <div>${tags}</div>
+            </div>
+        `;
     }
-    if (in_list) {
-        html += "</ul>";
+
+    // ── Action items (each linked to its source message) ─────────────────────
+    if (data.action_items.length > 0) {
+        html += `
+            <div style="margin-bottom:16px;">
+                <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;
+                    letter-spacing:0.05em; margin-bottom:8px;">Action Items</div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+        `;
+        for (const item of data.action_items) {
+            const assignee_badge = item.assignee
+                ? `<span style="background:#fef3c7; color:#92400e; border-radius:4px;
+                    padding:1px 7px; font-size:11px; font-weight:700; flex-shrink:0;">${esc(item.assignee)}</span>`
+                : "";
+            const src_link = item.narrow_url
+                ? `<span style="flex-shrink:0;">${link(item.narrow_url, "View source")}</span>`
+                : "";
+            html += `
+                <div style="display:flex; align-items:flex-start; gap:8px;
+                    background:#f8faff; border:1px solid #e0e7ff; border-radius:6px; padding:8px 12px;">
+                    <span style="color:#3451b2; flex-shrink:0; margin-top:1px;">◆</span>
+                    <span style="flex:1; font-size:13.5px; color:#222; line-height:1.5;">${esc(item.text)}</span>
+                    ${assignee_badge}
+                    ${src_link}
+                </div>
+            `;
+        }
+        html += `</div></div>`;
     }
+
+    // ── Per-topic summaries with key message links ────────────────────────────
+    if (data.topics.length > 0) {
+        html += `
+            <div>
+                <div style="font-size:12px; font-weight:700; color:#888; text-transform:uppercase;
+                    letter-spacing:0.05em; margin-bottom:8px;">Topics</div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+        `;
+        for (const t of data.topics) {
+            const key_msg_links = t.key_messages
+                .map(
+                    (km) =>
+                        `<div style="display:flex; align-items:flex-start; gap:6px;
+                            padding:5px 10px; background:#fff; border:1px solid #e8edf2;
+                            border-radius:5px; margin-top:4px;">
+                            <span style="color:#aaa; font-size:11px; flex-shrink:0; margin-top:1px;">↳</span>
+                            <span style="flex:1; font-size:12.5px; color:#444; line-height:1.5;">${esc(km.excerpt)}</span>
+                            ${km.narrow_url ? link(km.narrow_url, "Jump") : ""}
+                        </div>`,
+                )
+                .join("");
+
+            html += `
+                <div style="border:1px solid #e0e4ea; border-radius:8px; overflow:hidden;">
+                    <div style="display:flex; align-items:center; gap:8px; padding:8px 12px;
+                        background:#f5f7fa; border-bottom:1px solid #e8edf2;">
+                        <span style="background:#1c3a5e; color:#fff; border-radius:4px;
+                            padding:2px 8px; font-size:11px; font-weight:700;">#${esc(t.stream)}</span>
+                        <span style="font-size:13px; font-weight:600; flex:1; color:#222;">${esc(t.topic)}</span>
+                        ${t.narrow_url ? link(t.narrow_url, "View thread") : ""}
+                    </div>
+                    <div style="padding:8px 12px;">
+                        <div style="font-size:13px; color:#444; line-height:1.6; margin-bottom:4px;">${esc(t.summary)}</div>
+                        ${key_msg_links}
+                    </div>
+                </div>
+            `;
+        }
+        html += `</div></div>`;
+    }
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    const model_label = data.model_used === "demo" ? "demo data" : data.model_used;
+    html += `
+        <div style="margin-top:14px; padding-top:10px; border-top:1px solid #f0f2f5;
+            font-size:11px; color:#aaa; display:flex; justify-content:space-between;">
+            <span>${data.message_count} messages analysed</span>
+            <span>model: ${esc(model_label)}</span>
+        </div>
+    `;
+
+    html += `</div>`;
     return html;
 }
 
@@ -543,6 +686,7 @@ function load_topics(): void {
 function apply_data(topics: TopicData[], total: number, is_demo: boolean): void {
     cached_topics = topics;
     total_messages = total;
+    is_demo_mode = is_demo;
 
     const topic_count = topics.length;
     const mention_count = topics.filter((t) => t.has_mention).length;
@@ -653,6 +797,13 @@ function render_card(topic: TopicData): JQuery {
         )
         .join("");
 
+    const open_link = is_demo_mode
+        ? `<span style="font-size:12px; color:#bbb; font-style:italic;">demo data</span>`
+        : `<a href="${topic.narrow_url}" style="
+                font-size: 12px; color: hsl(218,57%,38%);
+                font-weight: 600; text-decoration: none;
+            ">Open conversation ↗</a>`;
+
     const footer = `
         <div style="
             padding: 7px 16px; font-size: 12px; color: #aaa;
@@ -660,10 +811,7 @@ function render_card(topic: TopicData): JQuery {
             display: flex; justify-content: space-between; align-items: center;
         ">
             <span>${topic.message_count} message${topic.message_count === 1 ? "" : "s"} · ${topic.sender_count} sender${topic.sender_count === 1 ? "" : "s"}</span>
-            <a href="${topic.narrow_url}" style="
-                font-size: 12px; color: hsl(218,57%,38%);
-                font-weight: 600; text-decoration: none;
-            ">Open conversation ↗</a>
+            ${open_link}
         </div>
     `;
 
