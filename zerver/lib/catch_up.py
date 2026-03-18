@@ -328,7 +328,8 @@ def get_catch_up_messages(
                 {
                     "id": message.id,
                     "sender_full_name": message.sender.full_name,
-                    "content": message.content[:200],  # Truncate for preview
+                    "content": message.content,
+                    "rendered_content": message.rendered_content or "",
                     "date_sent": str(message.date_sent),
                 }
             )
@@ -549,7 +550,8 @@ def get_catch_up_dm_messages(
                 {
                     "id": message.id,
                     "sender_full_name": message.sender.full_name,
-                    "content": message.content[:200],
+                    "content": message.content,
+                    "rendered_content": message.rendered_content or "",
                     "date_sent": str(message.date_sent),
                 }
             )

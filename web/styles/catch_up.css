@@ -411,6 +411,12 @@
     font-size: 0.85em;
 }
 
+.catch-up-preview-message-row {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+}
+
 .catch-up-ai-summary-list {
     margin: 0 0 0 18px;
     padding: 0;
@@ -442,12 +448,14 @@
 }
 
 .catch-up-preview-message {
-    padding: 3px 0;
+    display: inline;
     color: var(--color-text-default);
     opacity: 0.85;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+
+    p {
+        display: inline;
+        margin: 0;
+    }
 }
 
 /* Keywords */

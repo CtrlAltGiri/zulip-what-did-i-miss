@@ -179,37 +179,6 @@ function render_data(data: catch_up_data.CatchUpData): void {
 }
 
 function setup_event_handlers(): void {
-    // "AI Summary" button click handler.
-    $(".catch-up-summarize-btn").on("click", function (this: HTMLElement, e) {
-        e.stopPropagation();
-        const $btn = $(this);
-        const stream_id = Number($btn.attr("data-stream-id"));
-        const topic_name = $btn.attr("data-topic-name");
-
-        if (!topic_name || Number.isNaN(stream_id)) {
-            return;
-        }
-
-        const $card = $btn.closest(".catch-up-topic-card");
-        const $summary_container = $card.find(".catch-up-summary-container");
-
-        // Show loading state.
-        $summary_container.html(
-            '<div class="catch-up-summary-loading"><div class="loading_indicator_spinner"></div> Generating summary…</div>',
-        );
-
-        void catch_up_data
-            .fetch_topic_summary(stream_id, topic_name)
-            .then((summary) => {
-                $summary_container.html(summary);
-            })
-            .catch(() => {
-                $summary_container.html(
-                    '<div class="catch-up-summary-error">Failed to generate summary. AI features may not be enabled on this server.</div>',
-                );
-            });
-    });
-
     // Filter button click handlers.
     $(".catch-up-filter-btn").on("click", function (this: HTMLElement) {
         const filter = $(this).attr("data-filter") as FilterMode | undefined;
