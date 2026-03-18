@@ -507,5 +507,141 @@ export function hide(): void {
     card_focus = -1;
     current_filter = "all";
     current_stream_filter = "all";
+    overview_open = false;
+    cached_overview = null;
     catch_up_data.clear_data();
 }
+
+// ── Global AI Summary (US-08: context linking across all missed messages) ─────
+
+type OverviewActionItem = {
+    text: string;
+    assignee: string | null;
+    message_id: number | null;
+    narrow_url: string | null;
+};
+
+type OverviewTopic = {
+    stream: string;
+    topic: string;
+    summary: string;
+    narrow_url: string;
+    key_messages: {id: number; excerpt: string; narrow_url: string}[];
+};
+
+type OverviewResponse = {
+    structured: boolean;
+    overview: string;
+    keywords: string[];
+    action_items: OverviewActionItem[];
+    topics: OverviewTopic[];
+    model_used: string;
+    message_count: number;
+};
+
+let overview_open = false;
+let cached_overview: OverviewResponse | null = null;
+
+function esc(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function resolve_topic_url(stream: string, topic: string): string {
+    // Use hash_util for a properly encoded narrow URL.
+    // We look this up fresh each call since stream data is always available.
+    const {stream_data} = window as unknown as {stream_data?: {get_sub_by_name(n: string): {stream_id: number} | undefined}};
+    if (stream_data) {
+        const sub = stream_data.get_sub_by_name(stream);
+        if (sub) {
+            return hash_util.by_stream_topic_url(sub.stream_id, topic);
+        }
+    }
+    return "";
+}
+
+function render_overview_panel(data: OverviewResponse): string {
+    let html = `<div class="catch-up-overview-body">`;
+
+    html += `<div class="catch-up-overview-summary">${esc(data.overview)}</div>`;
+
+    if (data.keywords.length > 0) {
+        const pills = data.keywords
+            .map((k) => `<span class="catch-up-keyword-pill">${esc(k)}</span>`)
+            .join("");
+        html += `<div class="catch-up-overview-section"><div class="catch-up-overview-section-label">Keywords</div><div>${pills}</div></div>`;
+    }
+
+    if (data.action_items.length > 0) {
+        html += `<div class="catch-up-overview-section"><div class="catch-up-overview-section-label">Action Items</div><div class="catch-up-action-list">`;
+        for (const item of data.action_items) {
+            const resolved_url = resolve_topic_url(
+                item.narrow_url?.split("/topic/")[0]?.split("-").slice(1).join("-") ?? "",
+                item.narrow_url?.split("/topic/")[1] ?? "",
+            );
+            const link = resolved_url
+                ? `<a href="${resolved_url}" class="catch-up-context-link">View source ↗</a>`
+                : "";
+            const badge = item.assignee
+                ? `<span class="catch-up-assignee-badge">${esc(item.assignee)}</span>`
+                : "";
+            html += `<div class="catch-up-action-item"><span class="catch-up-action-bullet">◆</span><span class="catch-up-action-text">${esc(item.text)}</span>${badge}${link}</div>`;
+        }
+        html += `</div></div>`;
+    }
+
+    if (data.topics.length > 0) {
+        html += `<div class="catch-up-overview-section"><div class="catch-up-overview-section-label">Topics</div><div class="catch-up-topic-summaries">`;
+        for (const t of data.topics) {
+            const topic_url = resolve_topic_url(t.stream, t.topic);
+            const thread_link = topic_url
+                ? `<a href="${topic_url}" class="catch-up-context-link">View thread ↗</a>`
+                : "";
+            const key_msgs = t.key_messages
+                .map((km) => {
+                    const jump_url = resolve_topic_url(t.stream, t.topic);
+                    const jump_link = jump_url
+                        ? `<a href="${jump_url}" class="catch-up-context-link">Jump ↗</a>`
+                        : "";
+                    return `<div class="catch-up-key-message"><span class="catch-up-key-message-arrow">↳</span><span class="catch-up-key-message-text">${esc(km.excerpt)}</span>${jump_link}</div>`;
+                })
+                .join("");
+            html += `<div class="catch-up-topic-summary-card"><div class="catch-up-topic-summary-header"><span class="catch-up-stream-badge">#${esc(t.stream)}</span><span class="catch-up-topic-summary-name">${esc(t.topic)}</span>${thread_link}</div><div class="catch-up-topic-summary-text">${esc(t.summary)}</div>${key_msgs}</div>`;
+        }
+        html += `</div></div>`;
+    }
+
+    html += `<div class="catch-up-overview-footer"><span>${data.message_count} messages analysed</span><span>model: ${esc(data.model_used)}</span></div>`;
+    html += `</div>`;
+    return html;
+}
+
+$(document).on("click", "#catch-up-overview-btn", () => {
+    overview_open = !overview_open;
+    const $panel = $("#catch-up-overview-panel");
+
+    if (!overview_open) {
+        $panel.slideUp(150);
+        return;
+    }
+
+    if (cached_overview) {
+        $panel.html(render_overview_panel(cached_overview)).slideDown(160);
+        return;
+    }
+
+    $panel
+        .html(`<div class="catch-up-overview-loading">✦ Claude is analysing your missed messages…</div>`)
+        .slideDown(160);
+
+    void $.get("/json/catch-up/overview")
+        .done((data: {result: string} & OverviewResponse) => {
+            cached_overview = data;
+            if (overview_open) {
+                $panel.html(render_overview_panel(data));
+            }
+        })
+        .fail((xhr: {responseJSON?: {msg?: string}}) => {
+            const msg = (xhr.responseJSON?.msg) ?? "Failed to generate summary.";
+            $panel.html(`<div class="catch-up-overview-error">⚠️ ${esc(msg)}</div>`);
+        });
+});
