@@ -105,6 +105,9 @@ export function report_catch_up_usage(duration_ms: number): void {
     if (!Number.isFinite(duration_ms) || duration_ms <= 0) {
         return;
     }
+    /*if (duration_ms <= 0) {
+        return;
+    }*/
 
     void channel.post({
         url: "/json/catch-up/usage",

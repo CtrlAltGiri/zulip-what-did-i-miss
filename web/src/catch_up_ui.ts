@@ -70,11 +70,24 @@ export function is_in_focus(): boolean {
 }
 
 function set_visible(value: boolean): void {
+    /*
     if (value && !is_catch_up_visible) {
         start_catch_up_usage_timer();
     } else if (!value && is_catch_up_visible) {
         stop_and_report_catch_up_usage_timer();
     }
+    is_catch_up_visible = value;*/
+
+    if (value === is_catch_up_visible) {
+        return;
+    }
+
+    if (value) {
+        start_catch_up_usage_timer();
+    } else {
+        stop_and_report_catch_up_usage_timer();
+    }
+
     is_catch_up_visible = value;
 }
 
