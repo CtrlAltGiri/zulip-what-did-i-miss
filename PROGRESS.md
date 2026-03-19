@@ -817,6 +817,22 @@ Verified with:
 
 ---
 
+### User usage tracking
+As suggested by the client, we added reporting logic to our codebase that tracks how long users spend on the catch-up tab and logs it to the Postgres table. This was included to gauge interest and usefulness. 
+
+#### Files modified
+| File | Change |
+|------|--------|
+| `web/src/catch_up_ui.ts` | Added a web timer that starts when the catch-up view becomes visible and stops on hide; durations under 1s are ignored |
+| `web/src/catch_up_data.ts` | Added `report_catch_up_usage`to track user usage time for the catch-up tab |
+| `zerver/action/catch_up.py` | Added functionality to record user usage on the catch-up tab |
+| `zerver/migrations/0777_catch_up_session.py` | Added `AI Summary` filter button and page-level AI summary block |
+| `zerver/models/__init__.py` | Import `CatchUpSession` |
+| `zerver/models/catch_up.py` | Implements the `CatchUpSession` class |
+| `zerver/tests/test_catch_up.py` | Added backend coverage for catch-up usage success, invalid duration, and unauthenticated access |
+| `zerver/views/catch_up.py` | Added `report_catch_up_usage` endpoint |
+| `zproject/urls.py` | Added the `report_catch_up_usage` rest path |
+
 ## Phase 5–6: Upcoming
 
 See [PLAN.md](./PLAN.md) for detailed plans for refinement
