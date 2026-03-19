@@ -2,7 +2,7 @@
 
 > **Project:** AI-powered catch-up feature for Zulip
 > **Repository:** [zulip-what-did-i-miss](https://github.com/CtrlAltGiri/zulip-what-did-i-miss)
-> **Last Updated:** 2026-02-17
+> **Last Updated:** 2026-03-18
 
 ---
 
@@ -15,8 +15,9 @@
 | **Phase 3** | Frontend — View Infrastructure | **COMPLETE** |
 | **Phase 4** | Frontend — Interactive Features | **COMPLETE** |
 | **Phase 4.5** | Runtime Bug Fixes | **COMPLETE** |
+| **Phase 4.6** | AI Summary UI Iteration | **COMPLETE** |
 | Phase 5 | Refinement & User Preferences | Not Started |
-| Phase 6 | Testing & Polish | Not Started |
+| Phase 6 | Testing & Polish | In Progress |
 
 ---
 
@@ -581,6 +582,7 @@ Added ~100 lines of new styles:
 | `web/templates/catch_up_view/catch_up_view.hbs` | ~60 | Main dashboard template with filter bar |
 | `web/templates/catch_up_view/catch_up_topic_card.hbs` | ~70 | Expandable topic card template |
 | `web/styles/catch_up.css` | ~500 | Full CSS with filters, expand/collapse, focus states |
+| `web/tests/catch_up_templates.test.cjs` | ~160 | UI template tests for AI Summary mode and cleaned-up catch-up cards |
 
 ### Modified Files
 
@@ -695,10 +697,9 @@ template to use `{{#if has_reactions}}` instead.
 
 ### Dev testing note
 
-`get_last_active_time()` in `zerver/lib/catch_up.py` has a temporary early return
-(`return timezone_now() - timedelta(hours=24)`) to force a 24-hour lookback for
-development testing. This **must be removed** before committing — it bypasses the
-real presence-based inactivity detection.
+`get_last_active_time()` now uses the intended presence/activity fallback logic.
+For local testing of catch-up behavior, use the `since` API parameter or seed
+messages in a recent enough time window rather than relying on a code override.
 
 ### Summary of all changes
 
@@ -717,6 +718,102 @@ real presence-based inactivity detection.
 2. **Django BitField lookups:** Use `flags__andnz=<flag>.mask`, not `flags__and=<flag>`.
 3. **Vagrant/Docker file sync:** Host-side edits may not be detected by file watchers inside the container. Restart `run-dev` after making changes to ensure they take effect.
 4. **Dev testing presence:** Since the user is actively browsing, `get_last_active_time()` returns "right now" — making catch-up data empty. A temporary override or the `since` API parameter is needed for testing.
+
+---
+
+## Phase 4.6: AI Summary UI Iteration
+
+**Status: COMPLETE**
+**Completed: 2026-03-18**
+
+### What was built
+
+A follow-up UI pass that introduced a separate `AI Summary` filter mode in the
+catch-up view, simplified the normal topic cards, and added frontend template
+tests for the new rendering behavior.
+
+### Final behavior
+
+#### 1. AI Summary filter mode
+
+- Added a fourth filter button, `AI Summary`, next to `All`, `Mentions`, and
+  `Important`
+- Clicking `AI Summary` rerenders the catch-up page into a page-level summary
+  block instead of showing the normal topic-card list
+- The summary block aggregates messages across the catch-up topics and renders
+  Zulip markdown/mentions using each message's `rendered_content`
+
+#### 2. Normal catch-up card cleanup
+
+- Removed the per-card `AI Summary` button from the standard catch-up cards
+- Removed keyword chips / tag-heavy extractive summary UI from those cards
+- Kept the core card behavior intact: stream/topic header, sender list, message
+  count, preview messages, and `Open topic`
+- Card preview messages now use rendered markdown HTML instead of raw source
+  text, so raw `**...**` markup no longer appears in previews
+
+#### 3. Backend payload additions for the UI
+
+- Added `all_messages` to each catch-up topic payload
+- Added `rendered_content` to both `sample_messages` and `all_messages`
+- Kept the preview cap behavior intact for normal cards:
+  `sample_messages` is still capped at 3 messages, while `all_messages`
+  contains the full topic message list used by the page-level AI Summary mode
+
+### Files modified
+
+| File | Change |
+|------|--------|
+| `web/src/catch_up_ui.ts` | Added `ai-summary` filter state, page-level AI summary rendering data, and rendered markdown post-processing |
+| `web/templates/catch_up_view/catch_up_view.hbs` | Added `AI Summary` filter button and page-level AI summary block |
+| `web/templates/catch_up_view/catch_up_topic_card.hbs` | Simplified normal cards: removed per-card AI Summary button and keyword chips; preview messages now render markdown |
+| `web/styles/catch_up.css` | Added styling for the AI Summary block and updated preview layout styling |
+| `web/src/catch_up_data.ts` | Extended frontend types to include `all_messages` and `rendered_content` |
+| `zerver/lib/catch_up.py` | Added `all_messages` plus rendered preview/full message content in the catch-up payload |
+| `zerver/tests/test_catch_up.py` | Added backend coverage for `all_messages`, `rendered_content`, and preview cap vs full message count |
+| `web/tests/catch_up_templates.test.cjs` | Added UI template coverage for AI Summary mode and cleaned-up card rendering |
+
+### Tests added
+
+#### Backend
+
+`zerver/tests/test_catch_up.py` now covers:
+
+- `all_messages` presence in `/json/catch-up`
+- `rendered_content` in `sample_messages`
+- `rendered_content` in `all_messages`
+- preview cap behavior (`sample_messages` capped at 3 while `all_messages`
+  contains the full topic history)
+
+Verified with:
+
+```bash
+./tools/test-backend zerver.tests.test_catch_up
+```
+
+#### Frontend
+
+`web/tests/catch_up_templates.test.cjs` covers:
+
+- page-level `AI Summary` rendering
+- standard catch-up view rendering
+- omission of the per-card `AI Summary` button
+- omission of keyword chips in normal cards
+- rendered markdown output in catch-up card previews
+
+Verified with:
+
+```bash
+./tools/test-js-with-node web/tests/catch_up_templates.test.cjs
+```
+
+### Notes
+
+1. The `AI Summary` tab is currently a presentation mode, not a model-backed AI
+   summarization feature. It uses already-available catch-up message data and
+   Zulip-rendered markdown.
+2. The normal topic cards intentionally still show only preview messages. The
+   full per-topic message list is reserved for the page-level AI Summary view.
 
 ---
 

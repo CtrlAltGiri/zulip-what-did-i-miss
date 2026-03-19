@@ -4,6 +4,7 @@ export type SampleMessage = {
     id: number;
     sender_full_name: string;
     content: string;
+    rendered_content?: string;
     date_sent: string;
 };
 
@@ -31,6 +32,7 @@ export type CatchUpTopic = {
     latest_message_id: number;
     first_message_id: number;
     sample_messages: SampleMessage[];
+    all_messages: SampleMessage[];
     key_messages?: KeyMessage[];
     keywords?: string[];
     is_dm?: boolean;

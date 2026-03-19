@@ -115,6 +115,7 @@ class CatchUpTopic:
     first_message_id: int = 0
     latest_date_sent: datetime | None = None
     sample_messages: list[dict[str, object]] = field(default_factory=list)
+    all_messages: list[dict[str, object]] = field(default_factory=list)
     key_messages: list[dict[str, object]] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     is_dm: bool = False
@@ -179,6 +180,7 @@ class CatchUpTopic:
             "latest_message_id": self.latest_message_id,
             "first_message_id": self.first_message_id,
             "sample_messages": self.sample_messages,
+            "all_messages": self.all_messages,
         }
         if self.key_messages:
             result["key_messages"] = self.key_messages
@@ -321,13 +323,24 @@ def get_catch_up_messages(
         topic.latest_message_id = message.id
         topic.latest_date_sent = message.date_sent
 
+        topic.all_messages.append(
+            {
+                "id": message.id,
+                "sender_full_name": message.sender.full_name,
+                "content": message.content,
+                "rendered_content": message.rendered_content or "",
+                "date_sent": str(message.date_sent),
+            }
+        )
+
         # Collect sample messages (first N non-bot messages).
         if len(topic.sample_messages) < MAX_SAMPLE_MESSAGES_PER_TOPIC:
             topic.sample_messages.append(
                 {
                     "id": message.id,
                     "sender_full_name": message.sender.full_name,
-                    "content": message.content[:200],  # Truncate for preview
+                    "content": message.content,
+                    "rendered_content": message.rendered_content or "",
                     "date_sent": str(message.date_sent),
                 }
             )
@@ -533,12 +546,23 @@ def get_catch_up_dm_messages(
         topic.latest_message_id = message.id
         topic.latest_date_sent = message.date_sent
 
+        topic.all_messages.append(
+            {
+                "id": message.id,
+                "sender_full_name": message.sender.full_name,
+                "content": message.content,
+                "rendered_content": message.rendered_content or "",
+                "date_sent": str(message.date_sent),
+            }
+        )
+
         if len(topic.sample_messages) < MAX_SAMPLE_MESSAGES_PER_TOPIC:
             topic.sample_messages.append(
                 {
                     "id": message.id,
                     "sender_full_name": message.sender.full_name,
-                    "content": message.content[:200],
+                    "content": message.content,
+                    "rendered_content": message.rendered_content or "",
                     "date_sent": str(message.date_sent),
                 }
             )
