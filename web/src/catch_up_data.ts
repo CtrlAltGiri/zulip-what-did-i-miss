@@ -99,3 +99,20 @@ export async function fetch_topic_summary(
         });
     });
 }
+
+export function report_catch_up_usage(duration_ms: number): void {
+    // Best-effort analytics; ignore failures.
+    if (!Number.isFinite(duration_ms) || duration_ms <= 0) {
+        return;
+    }
+    /*if (duration_ms <= 0) {
+        return;
+    }*/
+
+    void channel.post({
+        url: "/json/catch-up/usage",
+        data: {
+            duration_ms: JSON.stringify(Math.round(duration_ms)),
+        },
+    });
+}

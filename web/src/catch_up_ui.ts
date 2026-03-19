@@ -14,6 +14,30 @@ import * as stream_data from "./stream_data.ts";
 import * as views_util from "./views_util.ts";
 
 let is_catch_up_visible = false;
+let catch_up_visible_start_time_ms: number | undefined;
+
+function start_catch_up_usage_timer(): void {
+    if (catch_up_visible_start_time_ms !== undefined) {
+        return;
+    }
+    catch_up_visible_start_time_ms = Date.now();
+}
+
+function stop_and_report_catch_up_usage_timer(): void {
+    if (catch_up_visible_start_time_ms === undefined) {
+        return;
+    }
+
+    const duration_ms = Date.now() - catch_up_visible_start_time_ms;
+    catch_up_visible_start_time_ms = undefined;
+
+    // Filter out accidental flashes and negative/invalid durations.
+    if (!Number.isFinite(duration_ms) || duration_ms < 1000) {
+        return;
+    }
+
+    catch_up_data.report_catch_up_usage(duration_ms);
+}
 
 // Filter state
 type FilterMode = "all" | "mentions" | "important";
@@ -46,6 +70,24 @@ export function is_in_focus(): boolean {
 }
 
 function set_visible(value: boolean): void {
+    /*
+    if (value && !is_catch_up_visible) {
+        start_catch_up_usage_timer();
+    } else if (!value && is_catch_up_visible) {
+        stop_and_report_catch_up_usage_timer();
+    }
+    is_catch_up_visible = value;*/
+
+    if (value === is_catch_up_visible) {
+        return;
+    }
+
+    if (value) {
+        start_catch_up_usage_timer();
+    } else {
+        stop_and_report_catch_up_usage_timer();
+    }
+
     is_catch_up_visible = value;
 }
 
